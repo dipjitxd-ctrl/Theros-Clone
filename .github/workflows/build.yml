@@ -1,0 +1,55 @@
+name: Build Theros Cloner
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: unzip -q TherosCloner.zip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Android SDK + NDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" "ndk;29.0.13846066"
+
+      - name: Download BlackBox engine
+        run: git clone --depth 1 https://github.com/ALEX5402/NewBlackbox.git engine
+
+      - name: Merge Theros Cloner into the engine
+        run: bash TherosCloner/merge.sh engine
+
+      - name: Use the permanent signing key
+        run: |
+          mkdir -p ~/.android
+          cp TherosCloner/debug.keystore ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: engine
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Show signing fingerprint
+        run: |
+          for f in engine/app/build/outputs/apk/debug/*.apk; do
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$f" | head -3 || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TherosCloner-apk
+          path: engine/app/build/outputs/apk/debug/*.apk
+          
